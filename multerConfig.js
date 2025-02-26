@@ -22,7 +22,7 @@ const fileFilter = (req, file, cb) => {
     if (allowType.includes(file.mimetype)) {
         cb(null, true);
     } else {
-        cb(null, false); // Reject file without crashing
+        cb(null, false); 
     }
 };
 
