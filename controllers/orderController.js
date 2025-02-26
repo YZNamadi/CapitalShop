@@ -44,9 +44,9 @@
 
 
 
-const Cart = require('../models/Cart');
-const Order = require('../models/Order');
-const Product = require('../models/Product');
+const Cart = require('../models/cart');
+const Order = require('../models/order');
+const Product = require('../models/product');
 
 // Place an order
 exports.placeOrder = async (req, res) => {
