@@ -1,5 +1,5 @@
 const cloudinary= require('../cloudinaryConfig')
-const Product = require('../models/Product');
+const Product = require('../models/product');
 
 exports.createProduct = async (req, res, next) => {
   try {
@@ -9,8 +9,8 @@ exports.createProduct = async (req, res, next) => {
     if (req.file) {
       // Upload the image to Cloudinary
       const result = await cloudinary.uploader.upload(req.file.buffer.toString('base64'), {
-        resource_type: 'auto', // Auto-detect file type
-        folder: 'capital_shop/products', // Optional: Organize files in a folder
+        resource_type: 'auto',
+        folder: 'capital_shop/products',
       });
 
       // Extract the secure URL of the uploaded image
@@ -24,7 +24,7 @@ exports.createProduct = async (req, res, next) => {
       name: req.body.name,
       price: req.body.price,
       description: req.body.description,
-      image: imageUrl, // Save the image URL
+      image: imageUrl,
     });
 
     await product.save();
@@ -105,7 +105,7 @@ exports.updateProduct = async (req, res, next) => {
     product.name = req.body.name || product.name;
     product.price = req.body.price || product.price;
     product.description = req.body.description || product.description;
-    product.image = imageUrl || product.image; // Use the new image URL if provided, otherwise keep the old one
+    product.image = imageUrl || product.image; 
 
     // Save the updated product
     await product.save();
