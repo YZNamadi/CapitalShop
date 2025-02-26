@@ -1,6 +1,7 @@
 
 const Cart = require('../models/cart');
 const Product = require('../models/product');
+const Discount = require('../models/discount');
 
 // Add item to cart
 exports.addItemToCart = async (req, res) => {
@@ -64,6 +65,18 @@ exports.updateCartItem = async (req, res) => {
     await cart.save();
 
     res.json(cart);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+exports.getCartTotal = async (req, res) => {
+  try {
+    const cart = await Cart.findOne({ user: req.user._id }).populate('items.product');
+    if (!cart) return res.json({ total: 0 });
+
+    const total = cart.items.reduce((sum, item) => sum + item.product.price * item.quantity, 0);
+    res.json({ total });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
