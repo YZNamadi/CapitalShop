@@ -1,10 +1,15 @@
-
 const express = require('express');
 const router = express.Router();
-const authMiddleware = require('../middleware/authMiddleware');
-const orderController = require('../controllers/orderController');
 
-// Place an order
-router.post('/checkout', authMiddleware, orderController.placeOrder);
+// Import authMiddleware
+const {authMiddleware} = require('../middleware/authMiddleware');
+
+
+// Import placeOrder
+const { placeOrder } = require('../controllers/orderController');
+
+
+// Define the route
+router.post('/checkout', authMiddleware, placeOrder);
 
 module.exports = router;

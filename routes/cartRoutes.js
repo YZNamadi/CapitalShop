@@ -12,11 +12,17 @@
 
 // module.exports = router;
 
-
 const express = require('express');
-const { addItemToCart, getCart, removeItemFromCart, updateCartItem, clearCart, getCartTotal, applyDiscount } = require('../controllers/cartController');
-const authMiddleware = require('../middleware/authMiddleware');
-const cartController = require('../controllers/cartController');
+const { 
+  addItemToCart, 
+  getCart, 
+  removeItemFromCart, 
+  updateCartItem, 
+  clearCart, 
+  getCartTotal, 
+  applyDiscount 
+} = require('../controllers/cartController');
+const { authMiddleware } = require('../middleware/authMiddleware');
 
 const router = express.Router();
 

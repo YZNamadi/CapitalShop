@@ -1,34 +1,31 @@
-const cloudinary= require('../cloudinaryConfig')
+const cloudinary = require('../cloudinaryConfig');
 const Product = require('../models/product');
+const fs = require('fs');
 
-exports.createProduct = async (req, res, next) => {
+// Create product
+exports.createProduct = async (req, res) => {
   try {
-    let imageUrl;
+    if (!req.file) return res.status(400).json({ error: 'No image provided' });
 
-    // Check if an image was uploaded
-    if (req.file) {
-      // Upload the image to Cloudinary
-      const result = await cloudinary.uploader.upload(req.file.buffer.toString('base64'), {
-        resource_type: 'auto',
-        folder: 'capital_shop/products',
-      });
+    // Upload image to Cloudinary
+    const result = await cloudinary.uploader.upload(req.file.path, {
+      resource_type: 'image',
+      folder: 'capital_shop/products',
+    });
 
-      // Extract the secure URL of the uploaded image
-      imageUrl = result.secure_url;
-    } else {
-      return res.status(400).json({ error: 'No image provided' });
-    }
+    // Remove temp file
+    fs.unlinkSync(req.file.path);
 
-    // Create the product in the database
+    // Create product
     const product = new Product({
       name: req.body.name,
       price: req.body.price,
       description: req.body.description,
-      image: imageUrl,
+      category: req.body.category,
+      image: result.secure_url,
     });
 
     await product.save();
-
     res.status(201).json({ message: 'Product created successfully', product });
   } catch (error) {
     res.status(500).json({ error: 'Failed to create product', details: error.message });
@@ -39,7 +36,7 @@ exports.createProduct = async (req, res, next) => {
 exports.getProducts = async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 10; 
+    const limit = parseInt(req.query.limit) || 10;
     const skip = (page - 1) * limit;
 
     const products = await Product.find().skip(skip).limit(limit);
@@ -60,9 +57,10 @@ exports.getProductById = async (req, res) => {
   try {
     const product = await Product.findById(req.params.id);
     if (!product) return res.status(404).json({ error: 'Product not found' });
-    res.json(product)
+
+    res.json(product);
   } catch (error) {
-    res.status(500).json({ error: error.message })
+    res.status(500).json({ error: error.message });
   }
 };
 
@@ -76,40 +74,34 @@ exports.getProductsByCategory = async (req, res) => {
   }
 };
 
-// controllers/ProductController.js
-
-exports.updateProduct = async (req, res, next) => {
+// Update product
+exports.updateProduct = async (req, res) => {
   try {
     let imageUrl;
 
-    // Check if a new image was uploaded
     if (req.file) {
-      // Upload the new image to Cloudinary
-      const result = await cloudinary.uploader.upload(req.file.buffer.toString('base64'), {
-        resource_type: 'auto',
+      // Upload new image to Cloudinary
+      const result = await cloudinary.uploader.upload(req.file.path, {
+        resource_type: 'image',
         folder: 'capital_shop/products',
       });
 
-      // Extract the secure URL of the uploaded image
       imageUrl = result.secure_url;
+      fs.unlinkSync(req.file.path); // Remove temp file
     }
 
-    // Find the product by ID
+    // Find product by ID
     const product = await Product.findById(req.params.id);
+    if (!product) return res.status(404).json({ error: 'Product not found' });
 
-    if (!product) {
-      return res.status(404).json({ error: 'Product not found' });
-    }
-
-    // Update the product fields
+    // Update product fields
     product.name = req.body.name || product.name;
     product.price = req.body.price || product.price;
     product.description = req.body.description || product.description;
-    product.image = imageUrl || product.image; 
+    product.category = req.body.category || product.category;
+    product.image = imageUrl || product.image;
 
-    // Save the updated product
     await product.save();
-
     res.status(200).json({ message: 'Product updated successfully', product });
   } catch (error) {
     res.status(500).json({ error: 'Failed to update product', details: error.message });
