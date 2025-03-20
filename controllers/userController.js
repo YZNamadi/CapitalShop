@@ -8,14 +8,6 @@ const sendMail = require("../helper/email");
 const emailTemplate = require("../helper/register");
 const createError = require("../utils/error");
 
-// const User = require("../models/User");
-// const bcrypt = require("bcryptjs");
-// const jwt = require("jsonwebtoken");
-// const { validationResult } = require("express-validator");
-// const crypto = require("crypto");
-// const createError = require("../utilities/error");
-// const sendMail = require("../utilities/sendMail");
-// const emailTemplate = require("../utilities/emailTemplate");
 
 // Register
 const registerUser = async (req, res, next) => {
@@ -100,7 +92,10 @@ const loginUser = async (req, res, next) => {
       const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET, { expiresIn: "1h" });
 
       // Return success response
-      res.json({ message: "Login successful", token });
+      res.json({ message: "Login successful",
+         data: user,
+         token
+         });
   } catch (error) {
       console.error("Error during login:", error.message);
       return next(createError(500, "Internal server error"));
