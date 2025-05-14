@@ -32,7 +32,7 @@ const router = express.Router();
 
 /**
  * @swagger
- * /api/register:
+ * /api/users/register:
  *   post:
  *     summary: Register a new user
  *     tags: [Users]
@@ -63,7 +63,7 @@ router.post('/register', registerUser);
 
 /**
  * @swagger
- * /api/login:
+ * /api/users/login:
  *   post:
  *     summary: Log in a user
  *     tags: [Users]
@@ -91,31 +91,28 @@ router.post('/login', loginUser);
 
 /**
  * @swagger
- * /api/logout:
+ * /api/users/logout:
  *   post:
  *     summary: Log out a user
  *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
  *     responses:
  *       200:
  *         description: User logged out successfully
+ *       401:
+ *         description: Unauthorized
  */
-router.post('/logout', logoutUser);
+router.post('/logout', authMiddleware, logoutUser);
 
 /**
  * @swagger
- * /api/profile:
+ * /api/users/profile:
  *   get:
  *     summary: Get user profile
  *     tags: [Users]
  *     security:
  *       - bearerAuth: []
- *     parameters:
- *       - in: header
- *         name: Authorization
- *         required: true
- *         schema:
- *           type: string
- *           example: "Bearer <your_token_here>"
  *     responses:
  *       200:
  *         description: User profile retrieved successfully
@@ -126,7 +123,7 @@ router.get('/profile', authMiddleware, getUserProfile);
 
 /**
  * @swagger
- * /api/verify-email/{token}:
+ * /api/users/verify-email/{token}:
  *   get:
  *     summary: Verify email using a token
  *     tags: [Users]
@@ -146,21 +143,23 @@ router.get('/verify-email/:token', verifyEmail);
 
 /**
  * @swagger
- * /api/refresh-token:
+ * /api/users/refresh-token:
  *   get:
  *     summary: Refresh authentication token
  *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
  *     responses:
  *       200:
  *         description: Token refreshed successfully
  *       401:
  *         description: Unauthorized - Invalid or expired refresh token
  */
-router.get('/refresh-token', refreshToken);
+router.get('/refresh-token', authMiddleware, refreshToken);
 
 /**
  * @swagger
- * /api/google-authenticate:
+ * /api/users/google-authenticate:
  *   get:
  *     summary: Authenticate using Google
  *     tags: [Users]
@@ -172,7 +171,7 @@ router.get('/google-authenticate', passport.authenticate('google', { scope: ['pr
 
 /**
  * @swagger
- * /api/auth/google/login:
+ * /api/users/auth/google/login:
  *   get:
  *     summary: Handle Google authentication callback
  *     tags: [Users]
