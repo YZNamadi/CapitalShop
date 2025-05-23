@@ -22,6 +22,7 @@ const swaggerJSDoc = require('swagger-jsdoc');
 const swaggerUi = require('swagger-ui-express');
 
 const app = express();
+let server; // Declare server variable in the global scope
 
 // Security Middleware
 app.use(helmet()); // Set security HTTP headers
@@ -128,17 +129,6 @@ app.all('*', (req, res, next) => {
 // Global Error Handler
 app.use(errorHandler);
 
-// Graceful Shutdown
-process.on('SIGTERM', () => {
-  console.log('SIGTERM RECEIVED. Shutting down gracefully');
-  server.close(() => {
-    console.log('Process terminated!');
-    mongoose.connection.close(false, () => {
-      process.exit(0);
-    });
-  });
-});
-
 // Database Connection & Server Start
 mongoose
   .connect(process.env.MONGO_URI, {
@@ -148,8 +138,8 @@ mongoose
   .then(() => {
     console.log('MongoDB connected');
     const PORT = process.env.PORT || 9898;
-    const server = app.listen(PORT, () => {
-      console.log(`Server running on port ${PORT}`);
+    server = app.listen(PORT, () => { // Assign to the global server variable
+      console.log(`Server running in ${process.env.NODE_ENV} mode on port ${PORT}`);
     });
   })
   .catch((err) => {
@@ -157,9 +147,36 @@ mongoose
     process.exit(1);
   });
 
+// Graceful Shutdown
+const gracefulShutdown = () => {
+  console.log('👋 SIGTERM RECEIVED. Shutting down gracefully');
+  if (server) {
+    server.close(() => {
+      console.log('💥 Process terminated!');
+      mongoose.connection.close(false, () => {
+        process.exit(0);
+      });
+    });
+  } else {
+    console.log('Server not running, closing MongoDB connection...');
+    mongoose.connection.close(false, () => {
+      process.exit(0);
+    });
+  }
+};
+
+process.on('SIGTERM', gracefulShutdown);
+process.on('SIGINT', gracefulShutdown); // Handle Ctrl+C in development
+
 // Handle unhandled promise rejections
 process.on('unhandledRejection', (err) => {
-  console.log('UNHANDLED REJECTION!  Shutting down...');
+  console.log('UNHANDLED REJECTION! 💥 Shutting down...');
   console.log(err.name, err.message);
-  process.exit(1);
+  if (server) {
+    server.close(() => {
+      process.exit(1);
+    });
+  } else {
+    process.exit(1);
+  }
 });
