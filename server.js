@@ -5,37 +5,67 @@ const mongoose = require('mongoose');
 const bodyParser = require('body-parser');
 const cors = require('cors');
 const cookieParser = require('cookie-parser');
+const helmet = require('helmet');
+const mongoSanitize = require('express-mongo-sanitize');
+const xss = require('xss-clean');
+const compression = require('compression');
 const userRoutes = require('./routes/userRoutes');
 const orderRoutes = require('./routes/orderRoutes');
 const productRoutes = require('./routes/productRoutes');
 const cartRoutes = require('./routes/cartRoutes');
-const passport = require('passport'); // Google auth
-const session = require('express-session'); // Google auth
-require('./middleware/passport'); // Google auth
+const passport = require('passport');
+const session = require('express-session');
+const { basicLimiter } = require('./middleware/rateLimiter');
+const errorHandler = require('./middleware/errorHandler');
+require('./middleware/passport');
 const swaggerJSDoc = require('swagger-jsdoc');
 const swaggerUi = require('swagger-ui-express');
 
 const app = express();
 
-app.use(cors());
-app.use(morgan('dev'));
-app.use(cookieParser());
-app.use(bodyParser.json());
+// Security Middleware
+app.use(helmet()); // Set security HTTP headers
+app.use(mongoSanitize()); // Data sanitization against NoSQL query injection
+app.use(xss()); // Data sanitization against XSS
+app.use(basicLimiter); // Rate limiting
 
-// Google auth session
+// CORS Configuration
+app.use(cors({
+  origin: process.env.NODE_ENV === 'production' 
+    ? process.env.FRONTEND_URL 
+    : 'http://localhost:3000',
+  credentials: true
+}));
+
+// Logging
+if (process.env.NODE_ENV === 'development') {
+  app.use(morgan('dev'));
+}
+
+// Body Parser
+app.use(bodyParser.json({ limit: '10kb' }));
+app.use(bodyParser.urlencoded({ extended: true, limit: '10kb' }));
+app.use(cookieParser());
+app.use(compression()); // Compress response bodies
+
+// Session Configuration
 app.use(
   session({
     secret: process.env.SESSION_SECRET,
     resave: false,
     saveUninitialized: false,
-    cookie: { secure: false },
+    cookie: {
+      secure: process.env.NODE_ENV === 'production',
+      httpOnly: true,
+      maxAge: 24 * 60 * 60 * 1000 // 24 hours
+    },
   })
 );
 
 app.use(passport.initialize());
 app.use(passport.session());
 
-// Swagger Setup with JWT Authentication
+// Swagger Setup
 const swaggerDefinition = {
   openapi: '3.0.0',
   info: {
@@ -49,12 +79,10 @@ const swaggerDefinition = {
   },
   servers: [
     {
-      url: 'https://capitalshop-3its.onrender.com/',
-      description: 'Production server',
-    },
-    {
-      url: 'http://localhost:9898',
-      description: 'Development server',
+      url: process.env.NODE_ENV === 'production' 
+        ? 'https://capitalshop-3its.onrender.com/'
+        : 'http://localhost:9898',
+      description: `${process.env.NODE_ENV} server`,
     },
   ],
   components: {
@@ -77,25 +105,61 @@ const options = {
 const swaggerSpec = swaggerJSDoc(options);
 app.use('/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
+// Health Check
+app.get('/health', (req, res) => res.status(200).json({ status: 'ok' }));
+
 // Base Route
 app.get('/', (req, res) => res.send('Welcome to Capitalshop'));
 
-// Mount routes
+// API Routes
 app.use('/api/users', userRoutes);
 app.use('/api/orders', orderRoutes);
 app.use('/api/products', productRoutes);
 app.use('/api/cart', cartRoutes);
 
+// 404 Handler
+app.all('*', (req, res, next) => {
+  const err = new Error(`Can't find ${req.originalUrl} on this server!`);
+  err.status = 'fail';
+  err.statusCode = 404;
+  next(err);
+});
+
+// Global Error Handler
+app.use(errorHandler);
+
+// Graceful Shutdown
+process.on('SIGTERM', () => {
+  console.log('SIGTERM RECEIVED. Shutting down gracefully');
+  server.close(() => {
+    console.log('Process terminated!');
+    mongoose.connection.close(false, () => {
+      process.exit(0);
+    });
+  });
+});
+
 // Database Connection & Server Start
 mongoose
-  .connect(process.env.MONGO_URI)
+  .connect(process.env.MONGO_URI, {
+    useNewUrlParser: true,
+    useUnifiedTopology: true,
+  })
   .then(() => {
     console.log('MongoDB connected');
-    const PORT = process.env.PORT ;
-    app.listen(PORT, () => {
+    const PORT = process.env.PORT || 9898;
+    const server = app.listen(PORT, () => {
       console.log(`Server running on port ${PORT}`);
     });
   })
   .catch((err) => {
     console.error('MongoDB connection error:', err);
+    process.exit(1);
   });
+
+// Handle unhandled promise rejections
+process.on('unhandledRejection', (err) => {
+  console.log('UNHANDLED REJECTION!  Shutting down...');
+  console.log(err.name, err.message);
+  process.exit(1);
+});
