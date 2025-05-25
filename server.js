@@ -15,6 +15,7 @@ const productRoutes = require('./routes/productRoutes');
 const cartRoutes = require('./routes/cartRoutes');
 const passport = require('passport');
 const session = require('express-session');
+const MongoStore = require('connect-mongo');
 const { basicLimiter } = require('./middleware/rateLimiter');
 const errorHandler = require('./middleware/errorHandler');
 require('./middleware/passport');
@@ -48,16 +49,29 @@ app.use(cookieParser());
 app.use(compression()); // Compress response bodies
 
 // Session Configuration
+if (process.env.NODE_ENV === 'production') {
+  app.set('trust proxy', 1); // trust first proxy
+}
+
 app.use(
   session({
     secret: process.env.SESSION_SECRET,
     resave: false,
     saveUninitialized: false,
+    store: MongoStore.create({
+      mongoUrl: process.env.MONGO_URI,
+      collectionName: 'sessions', // Optional: customize collection name
+      ttl: 24 * 60 * 60, // Session TTL (in seconds)
+      autoRemove: 'native', // Enable automatic removal of expired sessions
+      crypto: {
+        secret: process.env.SESSION_SECRET // Optional: encrypt session data
+      }
+    }),
     cookie: {
       secure: process.env.NODE_ENV === 'production',
       httpOnly: true,
       maxAge: 24 * 60 * 60 * 1000 // 24 hours
-    },
+    }
   })
 );
 
@@ -128,38 +142,35 @@ app.all('*', (req, res, next) => {
 app.use(errorHandler);
 
 // Database Connection & Server Start
-mongoose
-  .connect(process.env.MONGO_URI, {
-    useNewUrlParser: true,
-    useUnifiedTopology: true,
-  })
-  .then(() => {
+const startServer = async () => {
+  try {
+    await mongoose.connect(process.env.MONGO_URI);
     console.log('MongoDB connected');
     const PORT = process.env.PORT || 9898;
-    server = app.listen(PORT, () => { // Assign to the global server variable
+    server = app.listen(PORT, () => {
       console.log(`Server running in ${process.env.NODE_ENV} mode on port ${PORT}`);
     });
-  })
-  .catch((err) => {
+  } catch (err) {
     console.error('MongoDB connection error:', err);
     process.exit(1);
-  });
+  }
+};
+
+startServer();
 
 // Graceful Shutdown
-const gracefulShutdown = () => {
+const gracefulShutdown = async () => {
   console.log('👋 SIGTERM RECEIVED. Shutting down gracefully');
-  if (server) {
-    server.close(() => {
+  try {
+    if (server) {
+      await new Promise((resolve) => server.close(resolve));
       console.log('💥 Process terminated!');
-      mongoose.connection.close(false, () => {
-        process.exit(0);
-      });
-    });
-  } else {
-    console.log('Server not running, closing MongoDB connection...');
-    mongoose.connection.close(false, () => {
-      process.exit(0);
-    });
+    }
+    await mongoose.connection.close();
+    process.exit(0);
+  } catch (err) {
+    console.error('Error during shutdown:', err);
+    process.exit(1);
   }
 };
 

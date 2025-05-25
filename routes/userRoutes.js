@@ -10,6 +10,7 @@ const {
   refreshToken,
 } = require('../controllers/userController');
 const { authMiddleware } = require('../middleware/authMiddleware');
+const { registrationLimiter } = require('../middleware/rateLimiter');
 
 const router = express.Router();
 
@@ -59,7 +60,7 @@ const router = express.Router();
  *       400:
  *         description: Invalid request data
  */
-router.post('/register', registerUser);
+router.post('/register', registrationLimiter, registerUser);
 
 /**
  * @swagger

@@ -19,10 +19,21 @@ const registerUser = async (req, res, next) => {
 
       const { name, email, password } = req.body;
 
-      // Check if user already exists
-      const existingUser = await User.findOne({ email });
+      // Validate email format
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(email)) {
+          return next(createError(400, "Please provide a valid email address"));
+      }
+
+      // Validate password strength
+      if (password.length < 8) {
+          return next(createError(400, "Password must be at least 8 characters long"));
+      }
+
+      // Check if user already exists - case insensitive email check
+      const existingUser = await User.findOne({ email: { $regex: new RegExp(`^${email}$`, 'i') } });
       if (existingUser) {
-          return next(createError(400, "User already exists"));
+          return next(createError(409, "An account with this email already exists. Please login or use a different email."));
       }
 
       // Hash password
@@ -34,7 +45,7 @@ const registerUser = async (req, res, next) => {
       // Create user
       const newUser = new User({
           name,
-          email,
+          email: email.toLowerCase(), // Store email in lowercase
           password: hashedPassword,
           isVerified: false,
           verificationToken,
@@ -53,14 +64,23 @@ const registerUser = async (req, res, next) => {
           });
 
           res.status(201).json({
-              message: "User registered successfully. Check your email to verify your account.",
+              success: true,
+              message: "Registration successful! Please check your email to verify your account.",
+              data: {
+                  name: newUser.name,
+                  email: newUser.email,
+                  isVerified: newUser.isVerified
+              }
           });
       } catch (error) {
           console.error("Failed to send verification email:", error.message);
-          return next(createError(500, "Failed to send verification email. Please try again later."));
+          // Delete the user if email sending fails
+          await User.findByIdAndDelete(newUser._id);
+          return next(createError(500, "Failed to complete registration due to email service error. Please try again later."));
       }
   } catch (error) {
-      next(error);
+      console.error("Registration error:", error);
+      next(createError(500, "Registration failed. Please try again later."));
   }
 };
 
