@@ -30,7 +30,21 @@ const productSchema = new mongoose.Schema({
     trim: true,
     lowercase: true,
     enum: {
-      values: ['electronics', 'clothing', 'books', 'home', 'sports', 'other'],
+      values: [
+        // Men's categories
+        'senator',
+        'summer-men',
+        'formal-wear',
+        'casuals',
+        // Women's categories
+        'mesh-gowns',
+        'bubu-gowns',
+        'dinner-gowns',
+        // Baby collection
+        'ball-gowns',
+        'summer-baby',
+        'diapers'
+      ],
       message: '{VALUE} is not a valid category'
     }
   },

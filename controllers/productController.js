@@ -341,7 +341,15 @@ exports.getProductsByCategory = async (req, res, next) => {
     const { category } = req.params;
     
     // Validate category
-    const validCategories = ['electronics', 'clothing', 'books', 'home', 'sports', 'other'];
+    const validCategories = [
+      // Men's categories
+      'senator', 'summer-men', 'formal-wear', 'casuals',
+      // Women's categories
+      'mesh-gowns', 'bubu-gowns', 'dinner-gowns',
+      // Baby collection
+      'ball-gowns', 'summer-baby', 'diapers'
+    ];
+    
     if (!validCategories.includes(category.toLowerCase())) {
       return next(createError(400, 'Invalid category'));
     }
