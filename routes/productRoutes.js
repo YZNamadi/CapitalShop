@@ -208,18 +208,14 @@ router.get('/:id', basicLimiter, productController.getProductById);
  *             properties:
  *               name:
  *                 type: string
- *                 minLength: 2
  *               price:
  *                 type: number
- *                 minimum: 0
  *               category:
  *                 type: string
  *               description:
  *                 type: string
- *                 minLength: 10
  *               stock:
  *                 type: integer
- *                 minimum: 0
  *               image:
  *                 type: string
  *                 format: binary
@@ -248,6 +244,9 @@ router.get('/:id', basicLimiter, productController.getProductById);
  *         description: Unauthorized - Token required
  */
 // Protected routes (require authentication)
+router.post('/', authMiddleware, upload.single('image'), productController.createProduct);
 router.post('/:id/rate', authMiddleware, productController.rateProduct);
+router.put('/:id', authMiddleware, upload.single('image'), productController.updateProduct);
+router.delete('/:id', authMiddleware, productController.deleteProduct);
 
 module.exports = router;
