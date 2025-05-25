@@ -19,6 +19,7 @@ exports.authMiddleware = async (req, res, next) => {
     try {
       decoded = jwt.verify(token, process.env.JWT_SECRET);
     } catch (error) {
+      console.error('Token verification error:', error.message);
       return res.status(401).json({ error: 'Invalid or expired token' });
     }
 
@@ -26,9 +27,13 @@ exports.authMiddleware = async (req, res, next) => {
       return res.status(401).json({ error: 'Token missing userId' });
     }
 
+    // Convert string ID to ObjectId if necessary
+    const userId = decoded.userId.toString();
+
     // Fetch user from the database
-    const foundUser = await User.findById(decoded.userId).select('-password');
+    const foundUser = await User.findById(userId).select('-password');
     if (!foundUser) {
+      console.error('User not found for ID:', userId);
       return res.status(401).json({ error: 'User not found' });
     }
 
