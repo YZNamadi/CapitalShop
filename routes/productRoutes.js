@@ -2,7 +2,8 @@ const express = require('express');
 const router = express.Router();
 const upload = require('../multerConfig');
 const productController = require('../controllers/productController');
-const { authMiddleware } = require('../middleware/authMiddleware'); // Import authMiddleware
+const { authMiddleware } = require('../middleware/authMiddleware');
+const { basicLimiter } = require('../middleware/rateLimiter');
 
 /**
  * @swagger
@@ -17,11 +18,6 @@ const { authMiddleware } = require('../middleware/authMiddleware'); // Import au
  *   schemas:
  *     Product:
  *       type: object
- *       required:
- *         - name
- *         - price
- *         - category
- *         - description
  *       properties:
  *         _id:
  *           type: string
@@ -29,15 +25,12 @@ const { authMiddleware } = require('../middleware/authMiddleware'); // Import au
  *         name:
  *           type: string
  *           description: Product name
- *           minLength: 2
  *         price:
  *           type: number
  *           description: Product price
- *           minimum: 0
  *         description:
  *           type: string
  *           description: Product description
- *           minLength: 10
  *         category:
  *           type: string
  *           description: Product category
@@ -47,12 +40,12 @@ const { authMiddleware } = require('../middleware/authMiddleware'); // Import au
  *         stock:
  *           type: integer
  *           description: Available stock quantity
- *           minimum: 0
- *   securitySchemes:
- *     bearerAuth:
- *       type: http
- *       scheme: bearer
- *       bearerFormat: JWT
+ *         averageRating:
+ *           type: number
+ *           description: Average product rating
+ *         numReviews:
+ *           type: integer
+ *           description: Number of reviews
  */
 
 /**
@@ -109,7 +102,7 @@ const { authMiddleware } = require('../middleware/authMiddleware'); // Import au
  *       500:
  *         description: Server error
  */
-router.get('/', productController.getProducts);
+router.get('/', basicLimiter, productController.getProducts);
 
 /**
  * @swagger
@@ -134,7 +127,21 @@ router.get('/', productController.getProducts);
  *               items:
  *                 $ref: '#/components/schemas/Product'
  */
-router.get('/search', productController.searchProducts);
+router.get('/search', basicLimiter, productController.searchProducts);
+
+/**
+ * @swagger
+ * /api/products/categories:
+ *   get:
+ *     summary: Get all product categories
+ *     tags: [Products]
+ *     responses:
+ *       200:
+ *         description: List of all product categories
+ *       500:
+ *         description: Server error
+ */
+router.get('/categories', basicLimiter, productController.getCategories);
 
 /**
  * @swagger
@@ -155,7 +162,7 @@ router.get('/search', productController.searchProducts);
  *       404:
  *         description: Category not found
  */
-router.get('/category/:category', productController.getProductsByCategory);
+router.get('/category/:category', basicLimiter, productController.getProductsByCategory);
 
 /**
  * @swagger
@@ -176,7 +183,7 @@ router.get('/category/:category', productController.getProductsByCategory);
  *       404:
  *         description: Product not found
  */
-router.get('/:id', productController.getProductById);
+router.get('/:id', basicLimiter, productController.getProductById);
 
 /**
  * @swagger
@@ -240,95 +247,7 @@ router.get('/:id', productController.getProductById);
  *       401:
  *         description: Unauthorized - Token required
  */
-router.post('/', authMiddleware, upload.single('image'), productController.createProduct);
-
-/**
- * @swagger
- * /api/products/{id}:
- *   put:
- *     summary: Update an existing product
- *     tags: [Products]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: header
- *         name: Authorization
- *         required: true
- *         schema:
- *           type: string
- *           example: "Bearer <your_token>"
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
- *         description: Product ID
- *     requestBody:
- *       required: true
- *       content:
- *         multipart/form-data:
- *           schema:
- *             type: object
- *             required:
- *               - name
- *               - price
- *               - category
- *               - description
- *               - image
- *             properties:
- *               name:
- *                 type: string
- *               price:
- *                 type: number
- *               category:
- *                 type: string
- *               description:
- *                 type: string
- *                 description: Product description
- *               image:
- *                 type: string
- *                 format: binary
- *     responses:
- *       200:
- *         description: Product updated successfully
- *       400:
- *         description: Invalid request data
- *       401:
- *         description: Unauthorized - Token required
- *       404:
- *         description: Product not found
- */
-router.put('/:id', authMiddleware, upload.single('image'), productController.updateProduct);
-
-/**
- * @swagger
- * /api/products/{id}:
- *   delete:
- *     summary: Delete a product
- *     tags: [Products]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: header
- *         name: Authorization
- *         required: true
- *         schema:
- *           type: string
- *           example: "Bearer <your_token>"
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
- *         description: Product ID
- *     responses:
- *       200:
- *         description: Product deleted successfully
- *       401:
- *         description: Unauthorized - Token required
- *       404:
- *         description: Product not found
- */
-router.delete('/:id', authMiddleware, productController.deleteProduct);
+// Protected routes (require authentication)
+router.post('/:id/rate', authMiddleware, productController.rateProduct);
 
 module.exports = router;

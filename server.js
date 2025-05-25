@@ -23,7 +23,7 @@ const swaggerJSDoc = require('swagger-jsdoc');
 const swaggerUi = require('swagger-ui-express');
 
 const app = express();
-let server; // Declare server variable in the global scope
+let server;
 
 // Security Middleware
 app.use(helmet()); // Set security HTTP headers
@@ -37,10 +37,8 @@ app.use(cors({
   credentials: true
 }));
 
-// Logging
-if (process.env.NODE_ENV === 'development') {
-  app.use(morgan('dev'));
-}
+// Request logging
+app.use(morgan('dev'));
 
 // Body Parser
 app.use(bodyParser.json({ limit: '10kb' }));
@@ -60,11 +58,11 @@ app.use(
     saveUninitialized: false,
     store: MongoStore.create({
       mongoUrl: process.env.MONGO_URI,
-      collectionName: 'sessions', // Optional: customize collection name
-      ttl: 24 * 60 * 60, // Session TTL (in seconds)
-      autoRemove: 'native', // Enable automatic removal of expired sessions
+      collectionName: 'sessions',
+      ttl: 24 * 60 * 60,
+      autoRemove: 'native',
       crypto: {
-        secret: process.env.SESSION_SECRET // Optional: encrypt session data
+        secret: process.env.SESSION_SECRET
       }
     }),
     cookie: {
@@ -151,7 +149,7 @@ const startServer = async () => {
       console.log(`Server running in ${process.env.NODE_ENV} mode on port ${PORT}`);
     });
   } catch (err) {
-    console.error('MongoDB connection error:', err);
+    console.error('Server startup error:', err);
     process.exit(1);
   }
 };
@@ -175,7 +173,7 @@ const gracefulShutdown = async () => {
 };
 
 process.on('SIGTERM', gracefulShutdown);
-process.on('SIGINT', gracefulShutdown); // Handle Ctrl+C in development
+process.on('SIGINT', gracefulShutdown);
 
 // Handle unhandled promise rejections
 process.on('unhandledRejection', (err) => {

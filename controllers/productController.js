@@ -1,52 +1,105 @@
 const cloudinary = require('../cloudinaryConfig');
 const Product = require('../models/product');
 const fs = require('fs');
+const createError = require('../utils/error');
 
-// Create product
-exports.createProduct = async (req, res) => {
+// Cache durations
+const CACHE_DURATIONS = {
+  SHORT: 60, // 1 minute
+  MEDIUM: 300, // 5 minutes
+  LONG: 3600, // 1 hour
+  VERY_LONG: 86400 // 24 hours
+};
+
+// Utility function to set cache headers
+const setCacheHeader = (res, duration) => {
+  res.set('Cache-Control', `public, max-age=${duration}`);
+};
+
+// Utility function to handle Cloudinary upload
+const uploadToCloudinary = async (file) => {
   try {
-    if (!req.file) return res.status(400).json({ error: 'No image provided' });
-
-    // Upload image to Cloudinary
-    const result = await cloudinary.uploader.upload(req.file.path, {
+    const result = await cloudinary.uploader.upload(file.path, {
       resource_type: 'image',
       folder: 'capital_shop/products',
     });
+    fs.unlinkSync(file.path); // Remove temp file
+    return result.secure_url;
+  } catch (error) {
+    fs.unlinkSync(file.path); // Clean up on error
+    throw new Error('Failed to upload image');
+  }
+};
 
-    // Remove temp file
-    fs.unlinkSync(req.file.path);
+// Create product
+exports.createProduct = async (req, res, next) => {
+  try {
+    if (!req.file) {
+      return next(createError(400, 'Product image is required'));
+    }
+
+    // Validate required fields
+    const requiredFields = ['name', 'price', 'description', 'category'];
+    for (const field of requiredFields) {
+      if (!req.body[field]) {
+        return next(createError(400, `${field} is required`));
+      }
+    }
+
+    // Upload image
+    const imageUrl = await uploadToCloudinary(req.file);
 
     // Create product
     const product = new Product({
       name: req.body.name,
-      price: req.body.price,
+      price: parseFloat(req.body.price),
       description: req.body.description,
-      category: req.body.category,
-      image: result.secure_url,
+      category: req.body.category.toLowerCase(),
+      image: imageUrl,
+      stock: parseInt(req.body.stock) || 0,
     });
 
     await product.save();
-    res.status(201).json({ message: 'Product created successfully', product });
+    res.status(201).json({
+      success: true,
+      message: 'Product created successfully',
+      data: product
+    });
   } catch (error) {
-    res.status(500).json({ error: 'Failed to create product', details: error.message });
+    next(createError(error.statusCode || 500, error.message));
   }
 };
 
 // Get all products with pagination, sorting, and filtering
-exports.getProducts = async (req, res) => {
+exports.getProducts = async (req, res, next) => {
   try {
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 10;
+    const page = Math.max(1, parseInt(req.query.page) || 1);
+    const limit = Math.min(50, Math.max(1, parseInt(req.query.limit) || 10));
     const skip = (page - 1) * limit;
 
     // Build query
-    const query = {};
+    const query = { isActive: true };
     
     // Price filter
     if (req.query.minPrice || req.query.maxPrice) {
       query.price = {};
       if (req.query.minPrice) query.price.$gte = parseFloat(req.query.minPrice);
       if (req.query.maxPrice) query.price.$lte = parseFloat(req.query.maxPrice);
+    }
+
+    // Category filter
+    if (req.query.category) {
+      query.category = req.query.category.toLowerCase();
+    }
+
+    // Stock filter
+    if (req.query.inStock === 'true') {
+      query.stock = { $gt: 0 };
+    }
+
+    // Rating filter
+    if (req.query.minRating) {
+      query.averageRating = { $gte: parseFloat(req.query.minRating) };
     }
 
     // Build sort options
@@ -64,120 +117,254 @@ exports.getProducts = async (req, res) => {
       case 'name_desc':
         sortOptions.name = -1;
         break;
+      case 'rating_desc':
+        sortOptions.averageRating = -1;
+        break;
       default:
-        sortOptions = { _id: -1 }; // Default sort by newest
+        sortOptions = { createdAt: -1 }; // Default sort by newest
     }
 
-    const products = await Product.find(query)
-      .sort(sortOptions)
-      .skip(skip)
-      .limit(limit);
+    const [products, totalProducts] = await Promise.all([
+      Product.find(query)
+        .sort(sortOptions)
+        .skip(skip)
+        .limit(limit)
+        .select('-ratings'), // Exclude ratings array for performance
+      Product.countDocuments(query)
+    ]);
 
-    const totalProducts = await Product.countDocuments(query);
+    // Set cache header for product listings
+    setCacheHeader(res, CACHE_DURATIONS.SHORT);
 
     res.json({
-      products,
-      totalPages: Math.ceil(totalProducts / limit),
-      currentPage: page,
+      success: true,
+      data: {
+        products,
+        pagination: {
+          totalProducts,
+          totalPages: Math.ceil(totalProducts / limit),
+          currentPage: page,
+          limit
+        }
+      }
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    next(createError(500, error.message));
   }
 };
 
 // Get product by ID
-exports.getProductById = async (req, res) => {
+exports.getProductById = async (req, res, next) => {
   try {
-    const product = await Product.findById(req.params.id);
-    if (!product) return res.status(404).json({ error: 'Product not found' });
+    const product = await Product.findById(req.params.id)
+      .populate({
+        path: 'ratings.user',
+        select: 'name'
+      });
+    
+    if (!product) {
+      return next(createError(404, 'Product not found'));
+    }
 
-    res.json(product);
+    // Set cache header for individual products
+    setCacheHeader(res, CACHE_DURATIONS.MEDIUM);
+
+    res.json({
+      success: true,
+      data: product
+    });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    next(createError(500, error.message));
   }
 };
 
-// Filter products by category
-exports.getProductsByCategory = async (req, res) => {
+// Add or update product rating
+exports.rateProduct = async (req, res, next) => {
   try {
-    const products = await Product.find({ category: req.params.category });
-    res.json(products);
+    const { rating, review } = req.body;
+    const userId = req.user.userId;
+
+    if (!rating || rating < 1 || rating > 5) {
+      return next(createError(400, 'Rating must be between 1 and 5'));
+    }
+
+    const product = await Product.findById(req.params.id);
+    if (!product) {
+      return next(createError(404, 'Product not found'));
+    }
+
+    // Find existing rating
+    const existingRatingIndex = product.ratings.findIndex(
+      r => r.user.toString() === userId
+    );
+
+    if (existingRatingIndex > -1) {
+      // Update existing rating
+      product.ratings[existingRatingIndex].rating = rating;
+      product.ratings[existingRatingIndex].review = review;
+      product.ratings[existingRatingIndex].date = Date.now();
+    } else {
+      // Add new rating
+      product.ratings.push({
+        user: userId,
+        rating,
+        review,
+      });
+    }
+
+    await product.calculateAverageRating();
+
+    res.json({
+      success: true,
+      message: 'Rating updated successfully',
+      data: {
+        averageRating: product.averageRating,
+        numReviews: product.numReviews
+      }
+    });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    next(createError(500, error.message));
   }
 };
 
 // Update product
-exports.updateProduct = async (req, res) => {
+exports.updateProduct = async (req, res, next) => {
   try {
-    let imageUrl;
-
-    if (req.file) {
-      // Upload new image to Cloudinary
-      const result = await cloudinary.uploader.upload(req.file.path, {
-        resource_type: 'image',
-        folder: 'capital_shop/products',
-      });
-
-      imageUrl = result.secure_url;
-      fs.unlinkSync(req.file.path); // Remove temp file
+    const product = await Product.findById(req.params.id);
+    if (!product) {
+      return next(createError(404, 'Product not found'));
     }
 
-    // Find product by ID
-    const product = await Product.findById(req.params.id);
-    if (!product) return res.status(404).json({ error: 'Product not found' });
+    let imageUrl = product.image;
+    if (req.file) {
+      imageUrl = await uploadToCloudinary(req.file);
+    }
 
-    // Update product fields
-    product.name = req.body.name || product.name;
-    product.price = req.body.price || product.price;
-    product.description = req.body.description || product.description;
-    product.category = req.body.category || product.category;
-    product.image = imageUrl || product.image;
+    // Update fields if provided
+    const updates = {
+      name: req.body.name,
+      price: req.body.price ? parseFloat(req.body.price) : undefined,
+      description: req.body.description,
+      category: req.body.category ? req.body.category.toLowerCase() : undefined,
+      stock: req.body.stock ? parseInt(req.body.stock) : undefined,
+      image: imageUrl,
+      isActive: req.body.isActive !== undefined ? req.body.isActive : undefined
+    };
 
-    await product.save();
-    res.status(200).json({ message: 'Product updated successfully', product });
+    // Remove undefined values
+    Object.keys(updates).forEach(key => updates[key] === undefined && delete updates[key]);
+
+    const updatedProduct = await Product.findByIdAndUpdate(
+      req.params.id,
+      { $set: updates },
+      { new: true, runValidators: true }
+    );
+
+    res.json({
+      success: true,
+      message: 'Product updated successfully',
+      data: updatedProduct
+    });
   } catch (error) {
-    res.status(500).json({ error: 'Failed to update product', details: error.message });
+    next(createError(error.statusCode || 500, error.message));
   }
 };
 
 // Delete product
-exports.deleteProduct = async (req, res) => {
+exports.deleteProduct = async (req, res, next) => {
   try {
     const product = await Product.findById(req.params.id);
-    if (!product) return res.status(404).json({ error: 'Product not found' });
-
-    // Extract Cloudinary public ID from the URL
-    if (product.image) {
-      const publicId = product.image.split('/').slice(-2).join('/').split('.')[0];
-      // Delete image from Cloudinary
-      await cloudinary.uploader.destroy(`capital_shop/products/${publicId}`);
+    if (!product) {
+      return next(createError(404, 'Product not found'));
     }
 
-    await Product.findByIdAndDelete(req.params.id);
-    res.json({ message: 'Product deleted successfully' });
+    // Soft delete by setting isActive to false
+    product.isActive = false;
+    await product.save();
+
+    res.json({
+      success: true,
+      message: 'Product deleted successfully'
+    });
   } catch (error) {
-    res.status(500).json({ error: 'Failed to delete product', details: error.message });
+    next(createError(500, error.message));
   }
 };
 
 // Search products
-exports.searchProducts = async (req, res) => {
+exports.searchProducts = async (req, res, next) => {
   try {
-    const searchQuery = req.query.q;
+    const { q: searchQuery } = req.query;
     if (!searchQuery) {
-      return res.status(400).json({ error: 'Search query is required' });
+      return next(createError(400, 'Search query is required'));
     }
 
     const products = await Product.find({
-      $or: [
-        { name: { $regex: searchQuery, $options: 'i' } },
-        { description: { $regex: searchQuery, $options: 'i' } }
-      ]
-    });
+      isActive: true,
+      $text: { $search: searchQuery }
+    })
+    .select('-ratings')
+    .sort({ score: { $meta: 'textScore' } });
 
-    res.json(products);
+    // Set short cache for search results
+    setCacheHeader(res, CACHE_DURATIONS.SHORT);
+
+    res.json({
+      success: true,
+      data: products
+    });
   } catch (error) {
-    res.status(500).json({ error: 'Failed to search products', details: error.message });
+    next(createError(500, error.message));
+  }
+};
+
+// Get product categories
+exports.getCategories = async (req, res, next) => {
+  try {
+    const categories = await Product.distinct('category', { isActive: true });
+
+    // Set long cache for categories as they change infrequently
+    setCacheHeader(res, CACHE_DURATIONS.VERY_LONG);
+
+    res.json({
+      success: true,
+      data: categories
+    });
+  } catch (error) {
+    next(createError(500, error.message));
+  }
+};
+
+// Get products by category
+exports.getProductsByCategory = async (req, res, next) => {
+  try {
+    const { category } = req.params;
+    
+    // Validate category
+    const validCategories = ['electronics', 'clothing', 'books', 'home', 'sports', 'other'];
+    if (!validCategories.includes(category.toLowerCase())) {
+      return next(createError(400, 'Invalid category'));
+    }
+
+    const products = await Product.find({
+      category: category.toLowerCase(),
+      isActive: true
+    })
+    .select('-ratings')
+    .sort({ createdAt: -1 });
+
+    // Set cache header for category listings
+    setCacheHeader(res, CACHE_DURATIONS.MEDIUM);
+
+    res.json({
+      success: true,
+      data: {
+        category,
+        products,
+        count: products.length
+      }
+    });
+  } catch (error) {
+    next(createError(500, error.message));
   }
 };
