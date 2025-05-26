@@ -33,8 +33,11 @@ app.use(basicLimiter); // Rate limiting
 
 // CORS Configuration
 app.use(cors({
-  origin: '*',
-  credentials: true
+  origin: true,  // Allow all origins
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true,
+  optionsSuccessStatus: 200
 }));
 
 // Request logging
