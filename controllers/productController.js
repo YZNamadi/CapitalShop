@@ -34,6 +34,10 @@ const uploadToCloudinary = async (file) => {
 // Create product
 exports.createProduct = async (req, res, next) => {
   try {
+    console.log('Starting product creation...');
+    console.log('Request body:', req.body);
+    console.log('Request file:', req.file);
+
     if (!req.file) {
       return next(createError(400, 'Product image is required'));
     }
@@ -42,41 +46,65 @@ exports.createProduct = async (req, res, next) => {
     const requiredFields = ['name', 'price', 'description', 'category'];
     for (const field of requiredFields) {
       if (!req.body[field]) {
+        console.log(`Missing required field: ${field}`);
         return next(createError(400, `${field} is required`));
       }
     }
 
-    // Upload image
-    const imageUrl = await uploadToCloudinary(req.file);
-
-    // Create product
-    const product = new Product({
-      name: req.body.name,
-      price: parseFloat(req.body.price),
-      description: req.body.description,
-      category: req.body.category.toLowerCase(),
-      image: imageUrl,
-      stock: parseInt(req.body.stock) || 0,
-      isActive: true // Explicitly set isActive to true
-    });
-
-    const savedProduct = await product.save();
-    
-    if (!savedProduct) {
-      return next(createError(500, 'Failed to save product'));
+    // Validate price is a number
+    const price = parseFloat(req.body.price);
+    if (isNaN(price) || price < 0) {
+      console.log('Invalid price:', req.body.price);
+      return next(createError(400, 'Price must be a valid positive number'));
     }
 
-    res.status(201).json({
-      success: true,
-      message: 'Product created successfully',
-      data: savedProduct
-    });
+    // Validate category
+    const category = req.body.category.toLowerCase();
+    const validCategories = [
+      'senator', 'summer-men', 'formal-wear', 'casuals',
+      'mesh-gowns', 'bubu-gowns', 'dinner-gowns',
+      'ball-gowns', 'summer-baby', 'diapers'
+    ];
+    if (!validCategories.includes(category)) {
+      console.log('Invalid category:', category);
+      return next(createError(400, `Invalid category. Must be one of: ${validCategories.join(', ')}`));
+    }
+
+    try {
+      console.log('Uploading image to Cloudinary...');
+      const imageUrl = await uploadToCloudinary(req.file);
+      console.log('Image uploaded successfully:', imageUrl);
+
+      // Create product
+      const product = new Product({
+        name: req.body.name.trim(),
+        price: price,
+        description: req.body.description.trim(),
+        category: category,
+        image: imageUrl,
+        stock: parseInt(req.body.stock) || 0,
+        isActive: true
+      });
+
+      console.log('Saving product to database...');
+      const savedProduct = await product.save();
+      console.log('Product saved successfully:', savedProduct);
+
+      res.status(201).json({
+        success: true,
+        message: 'Product created successfully',
+        data: savedProduct
+      });
+    } catch (uploadError) {
+      console.error('Error during image upload or product save:', uploadError);
+      return next(createError(500, 'Failed to upload image or save product. Please try again.'));
+    }
   } catch (error) {
     console.error('Product creation error:', error);
     if (error.name === 'ValidationError') {
       return next(createError(400, error.message));
     }
-    next(createError(error.statusCode || 500, error.message));
+    next(createError(error.statusCode || 500, error.message || 'Internal server error during product creation'));
   }
 };
 
