@@ -57,15 +57,25 @@ exports.createProduct = async (req, res, next) => {
       category: req.body.category.toLowerCase(),
       image: imageUrl,
       stock: parseInt(req.body.stock) || 0,
+      isActive: true // Explicitly set isActive to true
     });
 
-    await product.save();
+    const savedProduct = await product.save();
+    
+    if (!savedProduct) {
+      return next(createError(500, 'Failed to save product'));
+    }
+
     res.status(201).json({
       success: true,
       message: 'Product created successfully',
-      data: product
+      data: savedProduct
     });
   } catch (error) {
+    console.error('Product creation error:', error);
+    if (error.name === 'ValidationError') {
+      return next(createError(400, error.message));
+    }
     next(createError(error.statusCode || 500, error.message));
   }
 };
@@ -78,7 +88,7 @@ exports.getProducts = async (req, res, next) => {
     const skip = (page - 1) * limit;
 
     // Build query
-    const query = { isActive: true };
+    const query = {};  // Remove isActive filter to show all products
     
     // Price filter
     if (req.query.minPrice || req.query.maxPrice) {
@@ -95,6 +105,11 @@ exports.getProducts = async (req, res, next) => {
     // Stock filter
     if (req.query.inStock === 'true') {
       query.stock = { $gt: 0 };
+    }
+
+    // Active filter (optional)
+    if (req.query.active) {
+      query.isActive = req.query.active === 'true';
     }
 
     // Rating filter
@@ -124,6 +139,8 @@ exports.getProducts = async (req, res, next) => {
         sortOptions = { createdAt: -1 }; // Default sort by newest
     }
 
+    console.log('Query:', query); // Add logging for debugging
+
     const [products, totalProducts] = await Promise.all([
       Product.find(query)
         .sort(sortOptions)
@@ -132,6 +149,8 @@ exports.getProducts = async (req, res, next) => {
         .select('-ratings'), // Exclude ratings array for performance
       Product.countDocuments(query)
     ]);
+
+    console.log('Found products:', products.length); // Add logging for debugging
 
     // Set cache header for product listings
     setCacheHeader(res, CACHE_DURATIONS.SHORT);
@@ -149,6 +168,7 @@ exports.getProducts = async (req, res, next) => {
       }
     });
   } catch (error) {
+    console.error('Get products error:', error); // Add error logging
     next(createError(500, error.message));
   }
 };

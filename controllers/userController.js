@@ -126,8 +126,21 @@ const loginUser = async (req, res, next) => {
 
 // Logout User
 const logoutUser = (req, res) => {
+    // Clear the cookie
     res.clearCookie("token");
-    res.status(200).json({ message: "Logged out successfully" });
+    
+    // Destroy the session if it exists
+    if (req.session) {
+        req.session.destroy();
+    }
+    
+    // Clear passport session
+    req.logout(function(err) {
+        if (err) {
+            return res.status(500).json({ message: "Error during logout", error: err.message });
+        }
+        res.status(200).json({ message: "Logged out successfully" });
+    });
 };
 
 // Get User Profile
