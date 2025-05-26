@@ -2,6 +2,7 @@ const cloudinary = require('../cloudinaryConfig');
 const Product = require('../models/product');
 const fs = require('fs');
 const createError = require('../utils/error');
+const mongoose = require('mongoose');
 
 // Cache durations
 const CACHE_DURATIONS = {
@@ -204,7 +205,15 @@ exports.getProducts = async (req, res, next) => {
 // Get product by ID
 exports.getProductById = async (req, res, next) => {
   try {
-    const product = await Product.findById(req.params.id)
+    // Clean the ID by removing any quotes
+    const cleanId = req.params.id.replace(/['"]+/g, '');
+    
+    // Validate if the ID is a valid MongoDB ObjectId
+    if (!mongoose.Types.ObjectId.isValid(cleanId)) {
+      return next(createError(400, 'Invalid product ID format'));
+    }
+
+    const product = await Product.findById(cleanId)
       .populate({
         path: 'ratings.user',
         select: 'name'
@@ -222,7 +231,8 @@ exports.getProductById = async (req, res, next) => {
       data: product
     });
   } catch (error) {
-    next(createError(500, error.message));
+    console.error('Error getting product by ID:', error);
+    next(createError(500, 'Error retrieving product'));
   }
 };
 
@@ -386,7 +396,8 @@ exports.getCategories = async (req, res, next) => {
 // Get products by category
 exports.getProductsByCategory = async (req, res, next) => {
   try {
-    const { category } = req.params;
+    // Clean the category by removing quotes and decoding URL
+    const category = decodeURIComponent(req.params.category).replace(/['"]+/g, '').toLowerCase();
     
     // Validate category
     const validCategories = [
@@ -398,16 +409,20 @@ exports.getProductsByCategory = async (req, res, next) => {
       'ball-gowns', 'summer-baby', 'diapers'
     ];
     
-    if (!validCategories.includes(category.toLowerCase())) {
-      return next(createError(400, 'Invalid category'));
+    if (!validCategories.includes(category)) {
+      console.log('Invalid category requested:', category);
+      console.log('Valid categories are:', validCategories);
+      return next(createError(400, `Invalid category. Must be one of: ${validCategories.join(', ')}`));
     }
 
     const products = await Product.find({
-      category: category.toLowerCase(),
+      category: category,
       isActive: true
     })
     .select('-ratings')
     .sort({ createdAt: -1 });
+
+    console.log(`Found ${products.length} products in category: ${category}`);
 
     // Set cache header for category listings
     setCacheHeader(res, CACHE_DURATIONS.MEDIUM);
@@ -421,6 +436,7 @@ exports.getProductsByCategory = async (req, res, next) => {
       }
     });
   } catch (error) {
-    next(createError(500, error.message));
+    console.error('Error getting products by category:', error);
+    next(createError(500, 'Error retrieving products'));
   }
 };
