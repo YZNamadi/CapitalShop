@@ -126,31 +126,50 @@ const loginUser = async (req, res, next) => {
 
 // Logout User
 const logoutUser = (req, res) => {
-    // Clear the cookie
-    res.clearCookie("token");
-    
-    // Destroy the session if it exists
-    if (req.session) {
-        req.session.destroy();
+    try {
+        res.clearCookie("token");
+        res.status(200).json({ 
+            success: true,
+            message: "Logged out successfully" 
+        });
+    } catch (error) {
+        console.error("Logout error:", error);
+        res.status(500).json({ 
+            success: false,
+            message: "Error during logout",
+            error: error.message
+        });
     }
-    
-    // Clear passport session
-    req.logout(function(err) {
-        if (err) {
-            return res.status(500).json({ message: "Error during logout", error: err.message });
-        }
-        res.status(200).json({ message: "Logged out successfully" });
-    });
 };
 
 // Get User Profile
 const getUserProfile = async (req, res, next) => {
     try {
-        const user = await User.findById(req.user.userId).select("-password");
-        if (!user) return next(createError(404, "User not found"));
+        // Extract user ID from JWT token
+        const token = req.headers.authorization?.split(' ')[1];
+        if (!token) {
+            return next(createError(401, "No token provided"));
+        }
 
-        res.status(200).json(user);
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        const user = await User.findById(decoded.userId).select("-password");
+        
+        if (!user) {
+            return next(createError(404, "User not found"));
+        }
+
+        res.status(200).json({
+            success: true,
+            data: user
+        });
     } catch (error) {
+        console.error("Get profile error:", error);
+        if (error.name === 'JsonWebTokenError') {
+            return next(createError(401, "Invalid token"));
+        }
+        if (error.name === 'TokenExpiredError') {
+            return next(createError(401, "Token expired"));
+        }
         next(error);
     }
 };

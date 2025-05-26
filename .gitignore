@@ -1,2 +1,6 @@
 node_modules
 .env
+test-endpoints.js
+test-products.js
+test-users.js
+
