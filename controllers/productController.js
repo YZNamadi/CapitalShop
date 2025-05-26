@@ -205,21 +205,23 @@ exports.getProducts = async (req, res, next) => {
 // Get product by ID
 exports.getProductById = async (req, res, next) => {
   try {
-    // Clean the ID by removing any quotes
-    const cleanId = req.params.id.replace(/['"]+/g, '');
+    console.log('Getting product by ID:', req.params.id);
+    
+    // Clean the ID by removing any quotes and whitespace
+    const cleanId = req.params.id.replace(/['"]+/g, '').trim();
+    console.log('Cleaned ID:', cleanId);
     
     // Validate if the ID is a valid MongoDB ObjectId
     if (!mongoose.Types.ObjectId.isValid(cleanId)) {
+      console.log('Invalid ObjectId format');
       return next(createError(400, 'Invalid product ID format'));
     }
 
-    const product = await Product.findById(cleanId)
-      .populate({
-        path: 'ratings.user',
-        select: 'name'
-      });
+    const product = await Product.findById(cleanId);
+    console.log('Found product:', product);
     
     if (!product) {
+      console.log('Product not found');
       return next(createError(404, 'Product not found'));
     }
 
@@ -232,7 +234,7 @@ exports.getProductById = async (req, res, next) => {
     });
   } catch (error) {
     console.error('Error getting product by ID:', error);
-    next(createError(500, 'Error retrieving product'));
+    next(createError(500, 'Error retrieving product: ' + error.message));
   }
 };
 
