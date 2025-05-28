@@ -25,28 +25,9 @@ const productSchema = new mongoose.Schema({
     maxlength: [2000, 'Description cannot exceed 2000 characters']
   },
   category: { 
-    type: String,
-    required: [true, 'Product category is required'],
-    trim: true,
-    lowercase: true,
-    enum: {
-      values: [
-        // Men's categories
-        'senator',
-        'summer-men',
-        'formal-wear',
-        'casuals',
-        // Women's categories
-        'mesh-gowns',
-        'bubu-gowns',
-        'dinner-gowns',
-        // Baby collection
-        'ball-gowns',
-        'summer-baby',
-        'diapers'
-      ],
-      message: '{VALUE} is not a valid category'
-    }
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Category',
+    required: [true, 'Product category is required']
   },
   image: { 
     type: String,
@@ -126,7 +107,6 @@ productSchema.methods.calculateAverageRating = function() {
 productSchema.pre('save', function(next) {
   if (this.name) this.name = this.name.trim();
   if (this.description) this.description = this.description.trim();
-  if (this.category) this.category = this.category.trim().toLowerCase();
   next();
 });
 

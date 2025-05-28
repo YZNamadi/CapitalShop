@@ -3,6 +3,7 @@ const Product = require('../models/product');
 const fs = require('fs');
 const createError = require('../utils/error');
 const mongoose = require('mongoose');
+const Category = require('../models/category');
 
 // Cache durations
 const CACHE_DURATIONS = {
@@ -59,16 +60,14 @@ exports.createProduct = async (req, res, next) => {
       return next(createError(400, 'Price must be a valid positive number'));
     }
 
-    // Validate category
-    const category = req.body.category.toLowerCase();
-    const validCategories = [
-      'senator', 'summer-men', 'formal-wear', 'casuals',
-      'mesh-gowns', 'bubu-gowns', 'dinner-gowns',
-      'ball-gowns', 'summer-baby', 'diapers'
-    ];
-    if (!validCategories.includes(category)) {
-      console.log('Invalid category:', category);
-      return next(createError(400, `Invalid category. Must be one of: ${validCategories.join(', ')}`));
+    // Validate category exists
+    const category = await Category.findById(req.body.category);
+    if (!category) {
+      return next(createError(400, 'Invalid category ID'));
+    }
+
+    if (!category.isActive) {
+      return next(createError(400, 'This category is not active'));
     }
 
     try {
@@ -81,7 +80,7 @@ exports.createProduct = async (req, res, next) => {
         name: req.body.name.trim(),
         price: price,
         description: req.body.description.trim(),
-        category: category,
+        category: category._id,
         image: imageUrl,
         stock: parseInt(req.body.stock) || 0,
         isActive: true
@@ -90,6 +89,9 @@ exports.createProduct = async (req, res, next) => {
       console.log('Saving product to database...');
       const savedProduct = await product.save();
       console.log('Product saved successfully:', savedProduct);
+
+      // Populate category details
+      await savedProduct.populate('category');
 
       res.status(201).json({
         success: true,
@@ -117,7 +119,7 @@ exports.getProducts = async (req, res, next) => {
     const skip = (page - 1) * limit;
 
     // Build query
-    const query = {};  // Remove isActive filter to show all products
+    const query = {};
     
     // Price filter
     if (req.query.minPrice || req.query.maxPrice) {
@@ -128,7 +130,11 @@ exports.getProducts = async (req, res, next) => {
 
     // Category filter
     if (req.query.category) {
-      query.category = req.query.category.toLowerCase();
+      const category = await Category.findById(req.query.category);
+      if (!category) {
+        return next(createError(400, 'Invalid category ID'));
+      }
+      query.category = category._id;
     }
 
     // Stock filter
@@ -168,36 +174,28 @@ exports.getProducts = async (req, res, next) => {
         sortOptions = { createdAt: -1 }; // Default sort by newest
     }
 
-    console.log('Query:', query); // Add logging for debugging
+    console.log('Query:', query);
 
-    const [products, totalProducts] = await Promise.all([
-      Product.find(query)
-        .sort(sortOptions)
-        .skip(skip)
-        .limit(limit)
-        .select('-ratings'), // Exclude ratings array for performance
-      Product.countDocuments(query)
-    ]);
+    const products = await Product.find(query)
+      .populate('category')
+      .sort(sortOptions)
+      .skip(skip)
+      .limit(limit)
+      .select('-ratings');
 
-    console.log('Found products:', products.length); // Add logging for debugging
-
-    // Set cache header for product listings
-    setCacheHeader(res, CACHE_DURATIONS.SHORT);
+    const total = await Product.countDocuments(query);
+    const totalPages = Math.ceil(total / limit);
 
     res.json({
       success: true,
       data: {
         products,
-        pagination: {
-          totalProducts,
-          totalPages: Math.ceil(totalProducts / limit),
-          currentPage: page,
-          limit
-        }
+        currentPage: page,
+        totalPages,
+        totalProducts: total
       }
     });
   } catch (error) {
-    console.error('Get products error:', error); // Add error logging
     next(createError(500, error.message));
   }
 };
@@ -398,41 +396,32 @@ exports.getCategories = async (req, res, next) => {
 // Get products by category
 exports.getProductsByCategory = async (req, res, next) => {
   try {
-    // Clean the category by removing quotes and decoding URL
-    const category = decodeURIComponent(req.params.category).replace(/['"]+/g, '').toLowerCase();
+    const categoryId = req.params.category;
     
-    // Validate category
-    const validCategories = [
-      // Men's categories
-      'senator', 'summer-men', 'formal-wear', 'casuals',
-      // Women's categories
-      'mesh-gowns', 'bubu-gowns', 'dinner-gowns',
-      // Baby collection
-      'ball-gowns', 'summer-baby', 'diapers'
-    ];
-    
-    if (!validCategories.includes(category)) {
-      console.log('Invalid category requested:', category);
-      console.log('Valid categories are:', validCategories);
-      return next(createError(400, `Invalid category. Must be one of: ${validCategories.join(', ')}`));
+    // Validate category exists
+    const category = await Category.findById(categoryId);
+    if (!category) {
+      return next(createError(404, 'Category not found'));
     }
 
+    // Get all subcategories of this category
+    const subcategories = await Category.find({ parent: categoryId });
+    const categoryIds = [categoryId, ...subcategories.map(sub => sub._id)];
+
     const products = await Product.find({
-      category: category,
+      category: { $in: categoryIds },
       isActive: true
     })
+    .populate('category')
     .select('-ratings')
     .sort({ createdAt: -1 });
 
-    console.log(`Found ${products.length} products in category: ${category}`);
-
-    // Set cache header for category listings
-    setCacheHeader(res, CACHE_DURATIONS.MEDIUM);
+    console.log(`Found ${products.length} products in category: ${category.name}`);
 
     res.json({
       success: true,
       data: {
-        category,
+        category: category.name,
         products,
         count: products.length
       }

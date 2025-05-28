@@ -32,7 +32,17 @@ const { basicLimiter } = require('../middleware/rateLimiter');
  *           type: string
  *           description: Product description
  *         category:
- *           type: string
+ *           type: object
+ *           properties:
+ *             _id:
+ *               type: string
+ *               description: Category ID
+ *             name:
+ *               type: string
+ *               description: Category name
+ *             parent:
+ *               type: string
+ *               description: Parent category ID (null for main categories)
  *           description: Product category
  *         image:
  *           type: string
@@ -46,6 +56,17 @@ const { basicLimiter } = require('../middleware/rateLimiter');
  *         numReviews:
  *           type: integer
  *           description: Number of reviews
+ *         isActive:
+ *           type: boolean
+ *           description: Whether the product is active
+ *         createdAt:
+ *           type: string
+ *           format: date-time
+ *           description: Creation timestamp
+ *         updatedAt:
+ *           type: string
+ *           format: date-time
+ *           description: Last update timestamp
  */
 
 /**
@@ -71,8 +92,13 @@ const { basicLimiter } = require('../middleware/rateLimiter');
  *         name: sort
  *         schema:
  *           type: string
- *           enum: [price_asc, price_desc, name_asc, name_desc]
+ *           enum: [price_asc, price_desc, name_asc, name_desc, rating_desc]
  *         description: Sort order for products
+ *       - in: query
+ *         name: category
+ *         schema:
+ *           type: string
+ *         description: Filter by category ID
  *       - in: query
  *         name: minPrice
  *         schema:
@@ -83,6 +109,18 @@ const { basicLimiter } = require('../middleware/rateLimiter');
  *         schema:
  *           type: number
  *         description: Maximum price filter
+ *       - in: query
+ *         name: inStock
+ *         schema:
+ *           type: boolean
+ *         description: Filter for in-stock products only
+ *       - in: query
+ *         name: minRating
+ *         schema:
+ *           type: number
+ *           minimum: 0
+ *           maximum: 5
+ *         description: Minimum rating filter
  *     responses:
  *       200:
  *         description: A list of products
@@ -91,14 +129,21 @@ const { basicLimiter } = require('../middleware/rateLimiter');
  *             schema:
  *               type: object
  *               properties:
- *                 products:
- *                   type: array
- *                   items:
- *                     $ref: '#/components/schemas/Product'
- *                 totalPages:
- *                   type: integer
- *                 currentPage:
- *                   type: integer
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     products:
+ *                       type: array
+ *                       items:
+ *                         $ref: '#/components/schemas/Product'
+ *                     currentPage:
+ *                       type: integer
+ *                     totalPages:
+ *                       type: integer
+ *                     totalProducts:
+ *                       type: integer
  *       500:
  *         description: Server error
  */
@@ -145,24 +190,42 @@ router.get('/categories', basicLimiter, productController.getCategories);
 
 /**
  * @swagger
- * /api/products/category/{category}:
+ * /api/products/category/{categoryId}:
  *   get:
- *     summary: Get products by category
+ *     summary: Get products by category (includes products from subcategories)
  *     tags: [Products]
  *     parameters:
  *       - in: path
- *         name: category
+ *         name: categoryId
  *         required: true
  *         schema:
  *           type: string
- *         description: Product category name
+ *         description: Category ID
  *     responses:
  *       200:
- *         description: List of products in the category
+ *         description: List of products in the category and its subcategories
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     category:
+ *                       type: string
+ *                     products:
+ *                       type: array
+ *                       items:
+ *                         $ref: '#/components/schemas/Product'
+ *                     count:
+ *                       type: integer
  *       404:
  *         description: Category not found
  */
-router.get('/category/:category', basicLimiter, productController.getProductsByCategory);
+router.get('/category/:categoryId', basicLimiter, productController.getProductsByCategory);
 
 /**
  * @swagger
@@ -208,17 +271,23 @@ router.get('/:id', basicLimiter, productController.getProductById);
  *             properties:
  *               name:
  *                 type: string
+ *                 description: Product name
  *               price:
  *                 type: number
+ *                 description: Product price
  *               category:
  *                 type: string
+ *                 description: Category ID
  *               description:
  *                 type: string
+ *                 description: Product description
  *               stock:
  *                 type: integer
+ *                 description: Initial stock quantity
  *               image:
  *                 type: string
  *                 format: binary
+ *                 description: Product image file
  *     responses:
  *       201:
  *         description: Product created successfully
@@ -227,21 +296,16 @@ router.get('/:id', basicLimiter, productController.getProductById);
  *             schema:
  *               type: object
  *               properties:
+ *                 success:
+ *                   type: boolean
  *                 message:
  *                   type: string
- *                 product:
+ *                 data:
  *                   $ref: '#/components/schemas/Product'
  *       400:
  *         description: Invalid request data
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 error:
- *                   type: string
  *       401:
- *         description: Unauthorized - Token required
+ *         description: Unauthorized
  */
 // Protected routes (require authentication)
 router.post('/', authMiddleware, upload.single('image'), productController.createProduct);
