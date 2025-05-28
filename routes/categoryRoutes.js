@@ -22,22 +22,28 @@ const { body } = require('express-validator');
  *         _id:
  *           type: string
  *           description: Auto-generated category ID
+ *           example: "60d3b41ef682744d9740e065"
  *         name:
  *           type: string
  *           description: Category name
+ *           example: "Men"
  *         slug:
  *           type: string
  *           description: URL-friendly category name
+ *           example: "men"
  *         description:
  *           type: string
  *           description: Category description
+ *           example: "Men's clothing and accessories"
  *         parent:
  *           type: string
  *           nullable: true
  *           description: Parent category ID (null for main categories)
+ *           example: null
  *         isActive:
  *           type: boolean
  *           description: Category status
+ *           example: true
  *         subcategories:
  *           type: array
  *           items:
@@ -46,9 +52,11 @@ const { body } = require('express-validator');
  *         createdAt:
  *           type: string
  *           format: date-time
+ *           example: "2024-03-15T10:30:00Z"
  *         updatedAt:
  *           type: string
  *           format: date-time
+ *           example: "2024-03-15T10:30:00Z"
  */
 
 // Validation middleware
@@ -164,7 +172,7 @@ router.get('/:id/subcategories', validate([schemas.id]), categoryController.getS
  *     summary: Create a new category
  *     tags: [Categories]
  *     security:
- *       - bearerAuth: []
+ *       - BearerAuth: []
  *     requestBody:
  *       required: true
  *       content:
@@ -177,12 +185,27 @@ router.get('/:id/subcategories', validate([schemas.id]), categoryController.getS
  *               name:
  *                 type: string
  *                 description: Category name
+ *                 example: "Senator"
  *               description:
  *                 type: string
  *                 description: Category description
+ *                 example: "Senator style clothing for men"
  *               parent:
  *                 type: string
  *                 description: Parent category ID (omit for main categories)
+ *                 example: "60d3b41ef682744d9740e065"
+ *           examples:
+ *             mainCategory:
+ *               summary: Create a main category
+ *               value:
+ *                 name: "Men"
+ *                 description: "Men's clothing and accessories"
+ *             subCategory:
+ *               summary: Create a subcategory
+ *               value:
+ *                 name: "Senator"
+ *                 description: "Senator style clothing for men"
+ *                 parent: "60d3b41ef682744d9740e065"
  *     responses:
  *       201:
  *         description: Category created successfully
@@ -193,8 +216,10 @@ router.get('/:id/subcategories', validate([schemas.id]), categoryController.getS
  *               properties:
  *                 success:
  *                   type: boolean
+ *                   example: true
  *                 message:
  *                   type: string
+ *                   example: "Category created successfully"
  *                 data:
  *                   $ref: '#/components/schemas/Category'
  *       400:
@@ -211,7 +236,7 @@ router.post('/', authMiddleware, validate(categoryValidation), categoryControlle
  *     summary: Update a category
  *     tags: [Categories]
  *     security:
- *       - bearerAuth: []
+ *       - BearerAuth: []
  *     parameters:
  *       - in: path
  *         name: id
@@ -272,7 +297,7 @@ router.put('/:id',
  *     summary: Soft delete a category and its subcategories
  *     tags: [Categories]
  *     security:
- *       - bearerAuth: []
+ *       - BearerAuth: []
  *     parameters:
  *       - in: path
  *         name: id
