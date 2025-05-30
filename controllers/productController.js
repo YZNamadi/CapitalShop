@@ -4,6 +4,7 @@ const fs = require('fs');
 const createError = require('../utils/error');
 const mongoose = require('mongoose');
 const Category = require('../models/category');
+const Cart = require('../models/cart');
 
 // Cache durations
 const CACHE_DURATIONS = {
@@ -429,5 +430,58 @@ exports.getProductsByCategory = async (req, res, next) => {
   } catch (error) {
     console.error('Error getting products by category:', error);
     next(createError(500, 'Error retrieving products'));
+  }
+};
+
+// Get recommended products based on cart items
+exports.getRecommendedProducts = async (req, res, next) => {
+  try {
+    // Get user's cart
+    const cart = await Cart.findOne({ user: req.user._id }).populate('items.product');
+    
+    if (!cart || !cart.items.length) {
+      return res.status(200).json({
+        success: true,
+        data: {
+          recommendations: []
+        }
+      });
+    }
+
+    // Extract categories and price ranges from cart items
+    const cartCategories = cart.items.map(item => item.product.category.toString());
+    const cartPrices = cart.items.map(item => item.product.price);
+    const avgPrice = cartPrices.reduce((a, b) => a + b, 0) / cartPrices.length;
+    
+    // Price range: ±30% of average cart item price
+    const minPrice = avgPrice * 0.7;
+    const maxPrice = avgPrice * 1.3;
+
+    // Find similar products
+    const recommendations = await Product.find({
+      $and: [
+        { _id: { $nin: cart.items.map(item => item.product._id) } }, // Exclude items already in cart
+        { isActive: true },
+        { stock: { $gt: 0 } },
+        {
+          $or: [
+            { category: { $in: cartCategories } }, // Same categories as cart items
+            { price: { $gte: minPrice, $lte: maxPrice } } // Similar price range
+          ]
+        }
+      ]
+    })
+    .populate('category')
+    .limit(6) // Limit to 6 recommendations
+    .select('-ratings');
+
+    res.json({
+      success: true,
+      data: {
+        recommendations
+      }
+    });
+  } catch (error) {
+    next(createError(500, error.message));
   }
 };

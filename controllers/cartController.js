@@ -3,6 +3,7 @@ const Product = require('../models/product');
 const Discount = require('../models/discount');
 
 // Add item to cart
+
 exports.addItemToCart = async (req, res) => {
   try {
     const { productId, quantity } = req.body;

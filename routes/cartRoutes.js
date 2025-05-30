@@ -8,6 +8,7 @@ const {
   getCartTotal,
   applyDiscount,
 } = require('../controllers/cartController');
+const { getRecommendedProducts } = require('../controllers/productController');
 const { authMiddleware } = require('../middleware/authMiddleware');
 
 const router = express.Router();
@@ -213,5 +214,35 @@ router.get('/total', authMiddleware, getCartTotal);
  *         description: Invalid discount code
  */
 router.post('/apply-discount', authMiddleware, applyDiscount);
+
+/**
+ * @swagger
+ * /api/cart/recommendations:
+ *   get:
+ *     summary: Get product recommendations based on cart items
+ *     tags: [Cart]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of recommended products
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     recommendations:
+ *                       type: array
+ *                       items:
+ *                         $ref: '#/components/schemas/Product'
+ *       401:
+ *         description: Unauthorized
+ */
+router.get('/recommendations', authMiddleware, getRecommendedProducts);
 
 module.exports = router;
