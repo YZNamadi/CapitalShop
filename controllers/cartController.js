@@ -1,20 +1,42 @@
 const Cart = require('../models/cart');
 const Product = require('../models/product');
 const Discount = require('../models/discount');
+const mongoose = require('mongoose');
 
 // Add item to cart
-
 exports.addItemToCart = async (req, res) => {
   try {
     const { productId, quantity } = req.body;
+    
+    console.log('Adding to cart - Product ID:', productId, 'Quantity:', quantity);
     
     if (!productId || quantity <= 0) {
       return res.status(400).json({ error: 'Invalid product ID or quantity' });
     }
 
-    const product = await Product.findById(productId);
+    // Validate if the ID is a valid MongoDB ObjectId
+    if (!mongoose.Types.ObjectId.isValid(productId)) {
+      console.log('Invalid ObjectId format:', productId);
+      return res.status(400).json({ error: 'Invalid product ID format' });
+    }
+
+    // Clean the ID by removing any quotes and whitespace
+    const cleanProductId = productId.toString().replace(/['"]+/g, '').trim();
+    console.log('Cleaned Product ID:', cleanProductId);
+
+    const product = await Product.findById(cleanProductId);
+    console.log('Found product:', product);
+
     if (!product) {
       return res.status(404).json({ error: 'Product not found' });
+    }
+
+    if (!product.isActive) {
+      return res.status(400).json({ error: 'This product is no longer available' });
+    }
+
+    if (product.stock < quantity) {
+      return res.status(400).json({ error: 'Not enough stock available' });
     }
 
     let cart = await Cart.findOneAndUpdate(
@@ -23,16 +45,30 @@ exports.addItemToCart = async (req, res) => {
       { new: true, upsert: true }
     );
 
-    const itemIndex = cart.items.findIndex(item => item.product.toString() === productId);
+    const itemIndex = cart.items.findIndex(item => item.product.toString() === cleanProductId);
     if (itemIndex > -1) {
-      cart.items[itemIndex].quantity += quantity;
+      // Check if adding quantity exceeds available stock
+      const newQuantity = cart.items[itemIndex].quantity + quantity;
+      if (newQuantity > product.stock) {
+        return res.status(400).json({ error: 'Adding this quantity would exceed available stock' });
+      }
+      cart.items[itemIndex].quantity = newQuantity;
     } else {
-      cart.items.push({ product: productId, quantity });
+      cart.items.push({ product: cleanProductId, quantity });
     }
 
     await cart.save();
-    res.json({ message: 'Item added to cart', cart });
+    
+    // Populate product details before sending response
+    await cart.populate('items.product');
+
+    res.json({ 
+      success: true,
+      message: 'Item added to cart successfully', 
+      cart 
+    });
   } catch (error) {
+    console.error('Error adding item to cart:', error);
     res.status(500).json({ error: error.message });
   }
 };
