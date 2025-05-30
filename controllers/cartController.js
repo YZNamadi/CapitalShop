@@ -24,11 +24,23 @@ exports.addItemToCart = async (req, res) => {
     const cleanProductId = productId.toString().replace(/['"]+/g, '').trim();
     console.log('Cleaned Product ID:', cleanProductId);
 
+    // Debug: List all products in the database
+    const allProducts = await Product.find({});
+    console.log('Total products in database:', allProducts.length);
+    console.log('Available product IDs:', allProducts.map(p => p._id.toString()));
+
     const product = await Product.findById(cleanProductId);
     console.log('Found product:', product);
 
     if (!product) {
-      return res.status(404).json({ error: 'Product not found' });
+      return res.status(404).json({ 
+        error: 'Product not found',
+        debug: {
+          searchedId: cleanProductId,
+          totalProducts: allProducts.length,
+          availableIds: allProducts.map(p => p._id.toString())
+        }
+      });
     }
 
     if (!product.isActive) {

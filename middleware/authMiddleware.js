@@ -5,25 +5,35 @@ exports.authMiddleware = async (req, res, next) => {
   try {
     // Extract token from Authorization header
     const authHeader = req.headers.authorization;
+    console.log('Auth Header:', authHeader); // Debug log
+
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      console.log('Invalid header format:', authHeader); // Debug log
       return res.status(401).json({ error: 'No token provided or invalid format' });
     }
 
     const token = authHeader.split(' ')[1];
+    console.log('Extracted token:', token); // Debug log
+
     if (!token) {
+      console.log('No token after split'); // Debug log
       return res.status(401).json({ error: 'No token provided' });
     }
 
     // Verify the token
     let decoded;
     try {
+      console.log('JWT_SECRET:', process.env.JWT_SECRET ? 'Is set' : 'Not set'); // Debug log (safe way)
       decoded = jwt.verify(token, process.env.JWT_SECRET);
+      console.log('Decoded token:', decoded); // Debug log
     } catch (error) {
       console.error('Token verification error:', error.message);
+      console.error('Token that failed:', token); // Debug log
       return res.status(401).json({ error: 'Invalid or expired token' });
     }
 
     if (!decoded || !decoded.userId) {
+      console.log('Missing userId in decoded token'); // Debug log
       return res.status(401).json({ error: 'Token missing userId' });
     }
 
