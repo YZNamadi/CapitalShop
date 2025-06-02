@@ -66,7 +66,57 @@ const { basicLimiter } = require('../middleware/rateLimiter');
  *         updatedAt:
  *           type: string
  *           format: date-time
- *           description: Last update timestamp
+ *           description: Update timestamp
+ *     Order:
+ *       type: object
+ *       properties:
+ *         _id:
+ *           type: string
+ *         orderNumber:
+ *           type: string
+ *         user:
+ *           type: string
+ *         items:
+ *           type: array
+ *           items:
+ *             type: object
+ *             properties:
+ *               product:
+ *                 $ref: '#/components/schemas/Product'
+ *               quantity:
+ *                 type: integer
+ *               price:
+ *                 type: number
+ *         totalAmount:
+ *           type: number
+ *         shippingAddress:
+ *           type: object
+ *           properties:
+ *             street:
+ *               type: string
+ *             city:
+ *               type: string
+ *             state:
+ *               type: string
+ *             zipCode:
+ *               type: string
+ *             country:
+ *               type: string
+ *         paymentMethod:
+ *           type: string
+ *           enum: [card, paypal, cash_on_delivery]
+ *         paymentStatus:
+ *           type: string
+ *           enum: [pending, paid, failed]
+ *         orderStatus:
+ *           type: string
+ *           enum: [pending, confirmed, processing, shipped, delivered, cancelled]
+ *         createdAt:
+ *           type: string
+ *           format: date-time
+ *         updatedAt:
+ *           type: string
+ *           format: date-time
  */
 
 /**
@@ -312,5 +362,249 @@ router.post('/', authMiddleware, upload.single('image'), productController.creat
 router.post('/:id/rate', authMiddleware, productController.rateProduct);
 router.put('/:id', authMiddleware, upload.single('image'), productController.updateProduct);
 router.delete('/:id', authMiddleware, productController.deleteProduct);
+
+/**
+ * @swagger
+ * /api/products/checkout:
+ *   post:
+ *     summary: Process product checkout
+ *     tags: [Products]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - items
+ *               - shippingAddress
+ *               - paymentMethod
+ *             properties:
+ *               items:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     productId:
+ *                       type: string
+ *                     quantity:
+ *                       type: integer
+ *                       minimum: 1
+ *               shippingAddress:
+ *                 type: object
+ *                 required:
+ *                   - street
+ *                   - city
+ *                   - state
+ *                   - zipCode
+ *                   - country
+ *                 properties:
+ *                   street:
+ *                     type: string
+ *                   city:
+ *                     type: string
+ *                   state:
+ *                     type: string
+ *                   zipCode:
+ *                     type: string
+ *                   country:
+ *                     type: string
+ *               paymentMethod:
+ *                 type: string
+ *                 enum: [card, paypal, cash_on_delivery]
+ *     responses:
+ *       201:
+ *         description: Order created successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     order:
+ *                       $ref: '#/components/schemas/Order'
+ *                     orderNumber:
+ *                       type: string
+ *                     totalAmount:
+ *                       type: number
+ *       400:
+ *         description: Invalid request data
+ *       401:
+ *         description: Unauthorized
+ *       404:
+ *         description: Product not found
+ */
+router.post('/checkout', authMiddleware, basicLimiter, productController.checkout);
+
+/**
+ * @swagger
+ * /api/products/checkout/cart:
+ *   post:
+ *     summary: Checkout items from cart
+ *     tags: [Products]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - shippingAddress
+ *               - paymentMethod
+ *             properties:
+ *               shippingAddress:
+ *                 type: object
+ *                 required:
+ *                   - street
+ *                   - city
+ *                   - state
+ *                   - zipCode
+ *                   - country
+ *                 properties:
+ *                   street:
+ *                     type: string
+ *                   city:
+ *                     type: string
+ *                   state:
+ *                     type: string
+ *                   zipCode:
+ *                     type: string
+ *                   country:
+ *                     type: string
+ *               paymentMethod:
+ *                 type: string
+ *                 enum: [card, paypal, cash_on_delivery]
+ *     responses:
+ *       201:
+ *         description: Order created successfully from cart
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     order:
+ *                       $ref: '#/components/schemas/Order'
+ *                     orderNumber:
+ *                       type: string
+ *                     totalAmount:
+ *                       type: number
+ *       400:
+ *         description: Invalid request data or empty cart
+ *       401:
+ *         description: Unauthorized
+ */
+router.post('/checkout/cart', authMiddleware, basicLimiter, productController.checkoutFromCart);
+
+/**
+ * @swagger
+ * /api/products/orders:
+ *   get:
+ *     summary: Get user orders
+ *     tags: [Products]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *         description: Page number
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 10
+ *         description: Number of orders per page
+ *     responses:
+ *       200:
+ *         description: Orders retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     orders:
+ *                       type: array
+ *                       items:
+ *                         $ref: '#/components/schemas/Order'
+ *                     pagination:
+ *                       type: object
+ *                       properties:
+ *                         currentPage:
+ *                           type: integer
+ *                         totalPages:
+ *                           type: integer
+ *                         totalOrders:
+ *                           type: integer
+ *                         hasNext:
+ *                           type: boolean
+ *                         hasPrev:
+ *                           type: boolean
+ *       401:
+ *         description: Unauthorized
+ */
+router.get('/orders', authMiddleware, basicLimiter, productController.getUserOrders);
+
+/**
+ * @swagger
+ * /api/products/orders/{orderId}:
+ *   get:
+ *     summary: Get single order
+ *     tags: [Products]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: orderId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Order ID
+ *     responses:
+ *       200:
+ *         description: Order retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     order:
+ *                       $ref: '#/components/schemas/Order'
+ *       400:
+ *         description: Invalid order ID
+ *       401:
+ *         description: Unauthorized
+ *       404:
+ *         description: Order not found
+ */
+router.get('/orders/:orderId', authMiddleware, basicLimiter, productController.getOrder);
 
 module.exports = router;

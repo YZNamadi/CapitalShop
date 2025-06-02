@@ -5,6 +5,7 @@ const createError = require('../utils/error');
 const mongoose = require('mongoose');
 const Category = require('../models/category');
 const Cart = require('../models/cart');
+const Order = require('../models/order');
 
 // Cache durations
 const CACHE_DURATIONS = {
@@ -64,51 +65,35 @@ exports.createProduct = async (req, res, next) => {
     // Validate category exists
     const category = await Category.findById(req.body.category);
     if (!category) {
-      return next(createError(400, 'Invalid category ID'));
+      return next(createError(400, 'Invalid category'));
     }
 
-    if (!category.isActive) {
-      return next(createError(400, 'This category is not active'));
-    }
+    // Upload image to Cloudinary
+    const imageUrl = await uploadToCloudinary(req.file);
 
-    try {
-      console.log('Uploading image to Cloudinary...');
-      const imageUrl = await uploadToCloudinary(req.file);
-      console.log('Image uploaded successfully:', imageUrl);
+    // Create product
+    const product = new Product({
+      name: req.body.name,
+      price: price,
+      description: req.body.description,
+      category: req.body.category,
+      image: imageUrl,
+      stock: req.body.stock || 0,
+      isActive: req.body.isActive !== undefined ? req.body.isActive : true
+    });
 
-      // Create product
-      const product = new Product({
-        name: req.body.name.trim(),
-        price: price,
-        description: req.body.description.trim(),
-        category: category._id,
-        image: imageUrl,
-        stock: parseInt(req.body.stock) || 0,
-        isActive: true
-      });
+    await product.save();
+    await product.populate('category');
 
-      console.log('Saving product to database...');
-      const savedProduct = await product.save();
-      console.log('Product saved successfully:', savedProduct);
+    res.status(201).json({
+      success: true,
+      message: 'Product created successfully',
+      data: { product }
+    });
 
-      // Populate category details
-      await savedProduct.populate('category');
-
-      res.status(201).json({
-        success: true,
-        message: 'Product created successfully',
-        data: savedProduct
-      });
-    } catch (uploadError) {
-      console.error('Error during image upload or product save:', uploadError);
-      return next(createError(500, 'Failed to upload image or save product. Please try again.'));
-    }
   } catch (error) {
-    console.error('Product creation error:', error);
-    if (error.name === 'ValidationError') {
-      return next(createError(400, error.message));
-    }
-    next(createError(error.statusCode || 500, error.message || 'Internal server error during product creation'));
+    console.error('Create product error:', error);
+    next(createError(500, 'Failed to create product'));
   }
 };
 
@@ -483,5 +468,253 @@ exports.getRecommendedProducts = async (req, res, next) => {
     });
   } catch (error) {
     next(createError(500, error.message));
+  }
+};
+
+// Checkout products
+exports.checkout = async (req, res, next) => {
+  try {
+    const { items, shippingAddress, paymentMethod } = req.body;
+    const userId = req.user.id;
+
+    // Validate required fields
+    if (!items || !Array.isArray(items) || items.length === 0) {
+      return next(createError(400, 'Items are required'));
+    }
+
+    if (!shippingAddress || !shippingAddress.street || !shippingAddress.city || 
+        !shippingAddress.state || !shippingAddress.zipCode || !shippingAddress.country) {
+      return next(createError(400, 'Complete shipping address is required'));
+    }
+
+    if (!paymentMethod || !['card', 'paypal', 'cash_on_delivery'].includes(paymentMethod)) {
+      return next(createError(400, 'Valid payment method is required'));
+    }
+
+    // Validate and process items
+    const orderItems = [];
+    let totalAmount = 0;
+
+    for (const item of items) {
+      if (!item.productId || !item.quantity || item.quantity < 1) {
+        return next(createError(400, 'Each item must have a valid productId and quantity'));
+      }
+
+      // Check if product exists and has sufficient stock
+      const product = await Product.findById(item.productId);
+      if (!product) {
+        return next(createError(404, `Product with ID ${item.productId} not found`));
+      }
+
+      if (!product.isActive) {
+        return next(createError(400, `Product ${product.name} is not available`));
+      }
+
+      if (product.stock < item.quantity) {
+        return next(createError(400, `Insufficient stock for ${product.name}. Available: ${product.stock}`));
+      }
+
+      const itemTotal = product.price * item.quantity;
+      totalAmount += itemTotal;
+
+      orderItems.push({
+        product: product._id,
+        quantity: item.quantity,
+        price: product.price
+      });
+
+      // Update product stock
+      product.stock -= item.quantity;
+      await product.save();
+    }
+
+    // Create order
+    const order = new Order({
+      user: userId,
+      items: orderItems,
+      totalAmount,
+      shippingAddress,
+      paymentMethod,
+      paymentStatus: paymentMethod === 'cash_on_delivery' ? 'pending' : 'pending',
+      orderStatus: 'pending'
+    });
+
+    await order.save();
+
+    // Populate order details for response
+    await order.populate('items.product', 'name price image');
+    await order.populate('user', 'name email');
+
+    res.status(201).json({
+      success: true,
+      message: 'Order created successfully',
+      data: {
+        order,
+        orderNumber: order.orderNumber,
+        totalAmount: order.totalAmount
+      }
+    });
+
+  } catch (error) {
+    console.error('Checkout error:', error);
+    next(createError(500, 'Failed to process checkout'));
+  }
+};
+
+// Checkout from cart
+exports.checkoutFromCart = async (req, res, next) => {
+  try {
+    const { shippingAddress, paymentMethod } = req.body;
+    const userId = req.user.id;
+
+    // Validate required fields
+    if (!shippingAddress || !shippingAddress.street || !shippingAddress.city || 
+        !shippingAddress.state || !shippingAddress.zipCode || !shippingAddress.country) {
+      return next(createError(400, 'Complete shipping address is required'));
+    }
+
+    if (!paymentMethod || !['card', 'paypal', 'cash_on_delivery'].includes(paymentMethod)) {
+      return next(createError(400, 'Valid payment method is required'));
+    }
+
+    // Get user's cart
+    const cart = await Cart.findOne({ user: userId }).populate('items.product');
+    if (!cart || cart.items.length === 0) {
+      return next(createError(400, 'Cart is empty'));
+    }
+
+    // Validate cart items and calculate total
+    const orderItems = [];
+    let totalAmount = 0;
+
+    for (const cartItem of cart.items) {
+      const product = cartItem.product;
+      
+      if (!product.isActive) {
+        return next(createError(400, `Product ${product.name} is not available`));
+      }
+
+      if (product.stock < cartItem.quantity) {
+        return next(createError(400, `Insufficient stock for ${product.name}. Available: ${product.stock}`));
+      }
+
+      const itemTotal = product.price * cartItem.quantity;
+      totalAmount += itemTotal;
+
+      orderItems.push({
+        product: product._id,
+        quantity: cartItem.quantity,
+        price: product.price
+      });
+
+      // Update product stock
+      product.stock -= cartItem.quantity;
+      await product.save();
+    }
+
+    // Create order
+    const order = new Order({
+      user: userId,
+      items: orderItems,
+      totalAmount,
+      shippingAddress,
+      paymentMethod,
+      paymentStatus: paymentMethod === 'cash_on_delivery' ? 'pending' : 'pending',
+      orderStatus: 'pending'
+    });
+
+    await order.save();
+
+    // Clear the cart after successful order
+    cart.items = [];
+    cart.totalAmount = 0;
+    await cart.save();
+
+    // Populate order details for response
+    await order.populate('items.product', 'name price image');
+    await order.populate('user', 'name email');
+
+    res.status(201).json({
+      success: true,
+      message: 'Order created successfully from cart',
+      data: {
+        order,
+        orderNumber: order.orderNumber,
+        totalAmount: order.totalAmount
+      }
+    });
+
+  } catch (error) {
+    console.error('Cart checkout error:', error);
+    next(createError(500, 'Failed to process cart checkout'));
+  }
+};
+
+// Get user orders
+exports.getUserOrders = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const skip = (page - 1) * limit;
+
+    const orders = await Order.find({ user: userId })
+      .populate('items.product', 'name price image')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit);
+
+    const totalOrders = await Order.countDocuments({ user: userId });
+
+    setCacheHeader(res, CACHE_DURATIONS.SHORT);
+
+    res.json({
+      success: true,
+      data: {
+        orders,
+        pagination: {
+          currentPage: page,
+          totalPages: Math.ceil(totalOrders / limit),
+          totalOrders,
+          hasNext: page < Math.ceil(totalOrders / limit),
+          hasPrev: page > 1
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('Get user orders error:', error);
+    next(createError(500, 'Failed to fetch orders'));
+  }
+};
+
+// Get single order
+exports.getOrder = async (req, res, next) => {
+  try {
+    const { orderId } = req.params;
+    const userId = req.user.id;
+
+    if (!mongoose.Types.ObjectId.isValid(orderId)) {
+      return next(createError(400, 'Invalid order ID'));
+    }
+
+    const order = await Order.findOne({ _id: orderId, user: userId })
+      .populate('items.product', 'name price image')
+      .populate('user', 'name email');
+
+    if (!order) {
+      return next(createError(404, 'Order not found'));
+    }
+
+    setCacheHeader(res, CACHE_DURATIONS.SHORT);
+
+    res.json({
+      success: true,
+      data: { order }
+    });
+
+  } catch (error) {
+    console.error('Get order error:', error);
+    next(createError(500, 'Failed to fetch order'));
   }
 };

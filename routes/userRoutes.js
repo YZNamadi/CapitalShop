@@ -94,15 +94,24 @@ router.post('/login', loginUser);
  * @swagger
  * /api/users/logout:
  *   post:
- *     summary: Log out a user
- *     tags: [Users]
+ *     summary: Logout user
+ *     tags: [Authentication]
  *     security:
  *       - bearerAuth: []
  *     responses:
  *       200:
- *         description: User logged out successfully
- *       401:
- *         description: Unauthorized
+ *         description: Logged out successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *       500:
+ *         description: Server error
  */
 router.post('/logout', authMiddleware, logoutUser);
 
