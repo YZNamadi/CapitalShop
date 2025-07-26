@@ -15,6 +15,8 @@ const CACHE_DURATIONS = {
   VERY_LONG: 86400 // 24 hours
 };
 
+
+
 // Utility function to set cache headers
 const setCacheHeader = (res, duration) => {
   res.set('Cache-Control', `public, max-age=${duration}`);
