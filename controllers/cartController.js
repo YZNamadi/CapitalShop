@@ -9,6 +9,8 @@ exports.addItemToCart = async (req, res) => {
     const { productId, quantity } = req.body;
     
     console.log('Adding to cart - Product ID:', productId, 'Quantity:', quantity);
+
+
     
     if (!productId || quantity <= 0) {
       return res.status(400).json({ error: 'Invalid product ID or quantity' });
